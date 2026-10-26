@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import {
   appendWarmUserTurn,
   applyWarmOutputLimit,
+  applyOpenAIExtendedTtl,
   applyWarmProbePayload,
   applyXaiWarmOutputLimit,
   bestEffortFamilyLabel,
@@ -40,6 +41,7 @@ import {
   isSafeReplayPayload,
   isSafeXaiReplayPayload,
   isStablePromptCacheKey,
+  OPENAI_EXTENDED_TTL_MS,
   OPENAI_RESPONSES_MIN_OUTPUT_TOKENS,
   payloadHasAnthropicLongTtl,
   payloadHasCacheControl,
@@ -6432,6 +6434,46 @@ for (const tool of [
   assert(formatWarmSettings({ ...DEFAULT_CONFIG, intervalMs: 15_000 }).includes("interval=15s"), "settings must support seconds");
   const anthropic = formatWarmSettings({ ...DEFAULT_CONFIG, intervalMs: null, logToFile: true }, "anthropic-messages");
   assert(anthropic.includes("interval=auto (provider default)") && anthropic.includes("Anthropic TTL=auto") && anthropic.includes("debug log=on"), "automatic interval and Anthropic-only TTL must be explicit");
+}
+
+// Opt-in 12h OpenAI TTL: only direct API-key GPT-5.6+ Responses turns are rewritten.
+{
+  const sol = modelFixture({
+    id: "gpt-6.1-sol", provider: "openai", api: "openai-responses",
+    baseUrl: "https://api.openai.com/v1",
+    compat: { supportsExplicitPromptCacheMode: true },
+  });
+  const original = { model: sol.id, prompt_cache_key: "sol-session", input: [] };
+  const out = applyOpenAIExtendedTtl(original, sol, false);
+  assert(payloadObject(out?.prompt_cache_options)?.ttl === "12h", "12h opt-in must set the request TTL");
+  assert(!("prompt_cache_options" in original), "the real payload object must not be mutated");
+  deepEqualExcept(original, out, new Set(["prompt_cache_options"]));
+  const long = applyOpenAIExtendedTtl({ ...original, prompt_cache_options: { ttl: "30m", mode: "implicit" } }, sol, false);
+  const longOptions = payloadObject(long?.prompt_cache_options);
+  assert(longOptions?.ttl === "12h" && longOptions.mode === "implicit", "12h must replace 30m and keep other options");
+  assert(applyOpenAIExtendedTtl(original, sol, true) === undefined, "ChatGPT sign-in rejects prompt_cache_options");
+  assert(applyOpenAIExtendedTtl({ ...original, prompt_cache_options: { mode: "explicit" } }, sol, false) === undefined,
+    "cacheRetention none must stay uncached");
+  assert(applyOpenAIExtendedTtl({ ...original, model: "other" }, sol, false) === undefined,
+    "a payload for another model must stay unchanged");
+  for (const other of [
+    modelFixture({ ...sol, compat: {} }),
+    modelFixture({ ...sol, provider: "openai-codex", api: "openai-codex-responses" }),
+    modelFixture({ ...sol, baseUrl: "https://proxy.invalid/v1" }),
+  ]) {
+    assert(applyOpenAIExtendedTtl(original, other, false) === undefined, "only direct GPT-5.6+ routes accept 12h");
+  }
+  const strategy = resolveStrategy(sol, { ...DEFAULT_CONFIG, intervalMs: null }, out);
+  assert(strategy.family === "openai-explicit-12h" && strategy.cacheRetention === "long" &&
+    strategy.intervalMs === Math.floor(OPENAI_EXTENDED_TTL_MS * 0.8), "12h payload must select the 12h cadence");
+  assert(resolveMaxIdleWarmMs(DEFAULT_CONFIG, "openai-explicit-12h") === 24 * 60 * 60_000, "12h idle cutoff is 24h");
+  assert(DEFAULT_CONFIG.openaiTtl === "auto" && !DEFAULT_CONFIG.allowCodexAutoWarm,
+    "12h is opt-in and Codex timer warming defaults off");
+  assert(parseConfigArgs("openaittl=12h", DEFAULT_CONFIG).openaiTtl === "12h", "/warm openaittl=12h must enable 12h");
+  assert(parseConfigJson(JSON.stringify({ schemaVersion: 2, openaiTtl: "12h" })).openaiTtl === "12h", "saved openaiTtl must load");
+  let rejected = false;
+  try { parseConfigArgs("openaittl=1h", DEFAULT_CONFIG); } catch { rejected = true; }
+  assert(rejected, "unsupported OpenAI TTL values must be rejected");
 }
 
 console.log("provider.test.ts: all assertions passed");

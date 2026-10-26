@@ -25,6 +25,7 @@ import { formatProbeCost } from "./savings.ts";
 import { ClaudeBridgeTransport } from "./claude-bridge.ts";
 import { NativeWarmingCoordinator, onNativeWarmingDecision, onRawProviderEvent } from "./compat.ts";
 import { FinalPayloadCapture } from "./payload-capture.ts";
+import { applyOpenAIExtendedTtl } from "./provider.ts";
 import { clearWarmUi, renderCapabilityNotice, renderIdleUi } from "./ui.ts";
 
 /**
@@ -266,17 +267,21 @@ export default function piWarmCache(pi: ExtensionAPI, saveConfig?: (config: Warm
 
   /**
    * CRITICAL PATH: capture the real serialized provider payload.
-   * READ-ONLY - do not return a modified payload.
+   * READ-ONLY by default - do not return a modified payload.
    * Rewriting real turns (e.g. forcing ttl:1h) can 400 unsupported routes
    * and silently doubles cache-write cost outside Pi's retention gates.
+   * The only exception is the explicit openaiTtl=12h opt-in, limited to
+   * direct api.openai.com GPT-5.6+ Responses turns with an API key.
    */
-  pi.on("before_provider_request", (_event, ctx) => {
+  pi.on("before_provider_request", (event, ctx) => {
     if (nativeWarming.isNativeRequest()) return;
     warmer.onProviderRequestPending(ctx);
     // Later extensions can replace the object. Capture after the full chain.
     if (!payloadCapture.observe(ctx)) {
       captureUnavailable(ctx);
     }
+    if (config.openaiTtl !== "12h" || !ctx.model) return;
+    return applyOpenAIExtendedTtl(event.payload, ctx.model, ctx.modelRegistry.isUsingOAuth(ctx.model));
   });
 
   pi.on("message_end", async (event, ctx) => {
@@ -321,6 +326,8 @@ export default function piWarmCache(pi: ExtensionAPI, saveConfig?: (config: Warm
         ["auto", "Reset to the provider refresh interval"],
         ["codex-on", "Enable Codex automatic warming"],
         ["codex-off", "Disable Codex automatic warming"],
+        ["openaittl=12h", "Request 12h OpenAI API cache TTL (2.5x write)"],
+        ["openaittl=auto", "Keep Pi's OpenAI cache TTL"],
         ["codex=auto", "Detect and avoid Codex suffix branch misses"],
         ["codex=exact", "Replay Codex requests exactly (uncapped output risk)"],
         ["codex=suffix", "Use the bounded Codex OK-suffix replay"],
@@ -373,7 +380,7 @@ export default function piWarmCache(pi: ExtensionAPI, saveConfig?: (config: Warm
       return items.length > 0 ? items : null;
     },
     description:
-      "Control prompt-cache warming. Usage: /warm [mode=both|mode=idle|mode=tools|mode=off|mode=native|scope=session|interval=auto|on|off|config|status|savings|now|resume|codex-on|codex-off|codex=auto|codex=exact|codex=suffix|5m|1h|auto|log|nolog|interval=4m|max=3|tools=gradle|tools=<tool-name>|tools=all|tools=off|model=all|model=<provider>/<model-id>|toolmin=3m|toolmax=6|advisor=on|advisor=off]",
+      "Control prompt-cache warming. Usage: /warm [mode=both|mode=idle|mode=tools|mode=off|mode=native|scope=session|interval=auto|on|off|config|status|savings|now|resume|codex-on|codex-off|openaittl=auto|openaittl=12h|codex=auto|codex=exact|codex=suffix|5m|1h|auto|log|nolog|interval=4m|max=3|tools=gradle|tools=<tool-name>|tools=all|tools=off|model=all|model=<provider>/<model-id>|toolmin=3m|toolmax=6|advisor=on|advisor=off]",
     handler: async (args, ctx) => {
       refreshAvailableWarmModels(ctx);
       const trimmed = args.trim();

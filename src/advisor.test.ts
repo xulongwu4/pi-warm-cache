@@ -72,7 +72,7 @@ const ctx = fixture<ExtensionContext>({
 });
 const pi = fixture<ExtensionAPI>({ getThinkingLevel: () => "off", getActiveTools: () => activeTools });
 const bridge = new AdvisorWarmer(pi);
-const config = { ...DEFAULT_CONFIG, warmAdvisor: true, intervalMs: 1000 };
+const config = { ...DEFAULT_CONFIG, warmAdvisor: true, intervalMs: 1000, allowCodexAutoWarm: true };
 try {
   bridge.configure(config, ctx);
   const installed = runtime.completeSimple;

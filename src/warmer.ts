@@ -1441,14 +1441,14 @@ export class SessionWarmer {
       );
       return;
     }
-    // Codex has no output-token cap. Measured first-tick out≈1127 on GPT-5.6 Luna.
-    // Do not auto-schedule unless the user explicitly opts in.
+    // Codex/Work subscription caches are retained server-side, and Codex has no
+    // output-token cap. Do not auto-schedule unless the user explicitly opts in.
     const api = this.anchor?.modelApi ?? ctx.model?.api;
     if (api === "openai-codex-responses" && !this.config.allowCodexAutoWarm) {
       this.showIdle(
         ctx,
         "codex auto-warm off",
-        "Codex OK-suffix warm can hit cache cheaply, but auto-warm is disabled for this session. /warm codex-on to enable timers, or /warm now for one probe.",
+        "Codex subscription caches are retained server-side, so timer warming is off. /warm codex-on to enable timers, or /warm now for one probe.",
       );
       return;
     }

@@ -93,8 +93,9 @@ can be edited before submitting.
 /warm mode=idle scope=session # temporary override; no file write
 /warm now              # send one probe when the current route allows it
 /warm resume           # clear a sticky automatic-warm block
-/warm codex-on         # enable Codex timer warming
+/warm codex-on         # enable Codex timer warming (off by default)
 /warm codex-off        # disable Codex timer warming
+/warm openaittl=12h    # request 12h OpenAI API cache TTL on real turns
 /warm codex=auto       # adapt after a suffix branch miss (default)
 /warm codex=exact      # replay Codex exactly (output is not hard-capped)
 /warm codex=suffix     # keep the bounded OK-suffix replay
@@ -148,6 +149,15 @@ This no-output mechanism is restricted to `openai` / `openai-responses` at
 `https://api.openai.com`. Azure, proxy routes, and the legacy OpenAI Codex
 subscription endpoint retain their existing replay policies; the OpenAI API's
 prewarm field is not assumed to work there.
+
+Optional 12-hour lifetime: `/warm openaittl=12h` rewrites real direct OpenAI
+GPT-5.6+ Responses turns (API key only; ChatGPT sign-in rejects the field) to
+`prompt_cache_options.ttl: "12h"`. Writes cost 2.5x instead of 1.25x of
+uncached input. This is the only real-turn rewrite and is off by default.
+
+OpenAI Codex timer warming is off by default because OpenAI states that
+Codex and Work subscription caches are retained without expiry for logged-in
+users. `/warm codex-on` restores the older 8-minute implicit cadence.
 
 If OpenAI returns a parameter-rejection HTTP 400 for a probe's newly added
 `prompt_cache_options`, the extension retries once with a small output cap and
@@ -424,6 +434,8 @@ Useful tokens for `/warm` and `--warm-cache`:
 | `interval=4m` | Explicit refresh interval | unset |
 | `scope=session` | Do not save this command | saved |
 | `codex=auto\|exact\|suffix` | Codex replay policy: adapt, exact endpoint replay, or legacy bounded suffix | `auto` |
+| `codex-on` / `codex-off` | Codex timer warming; subscription caches are retained server-side | off |
+| `openaittl=auto\|12h` | Rewrite direct OpenAI API-key GPT-5.6+ real turns to `prompt_cache_options.ttl: "12h"` (2.5x write rate); refresh cadence becomes about 9.6h | `auto` |
 | `max=` | Max concurrent warm sessions | 3 |
 | `maxidle=` | Stop after this idle time; `unlimited` removes the cutoff | about 30 minutes, or longer for 1-hour families |
 | `spend=` | Probe-spend ceiling in USD; `unlimited` removes the ceiling | $1.00 on OpenCode Go only |

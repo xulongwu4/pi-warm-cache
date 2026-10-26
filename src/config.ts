@@ -108,6 +108,7 @@ export function parseConfigJson(text: string): WarmCacheConfig {
     else if (key === "maxIdleWarmMs") valid = value === null || (Number.isSafeInteger(value) && Number(value) >= 0);
     else if (key === "warmSpendCeilingUsd") valid = value === null || (Number.isFinite(value) && Number(value) >= 0);
     else if (key === "anthropicTtl") valid = value === "auto" || value === "5m" || value === "1h";
+    else if (key === "openaiTtl") valid = value === "auto" || value === "12h";
     else if (key === "codexWarmMode") valid = value === "auto" || value === "exact" || value === "suffix";
     else if (key === "warmSuffix") valid = Object.prototype.toString.call(value) === "[object String]";
     else if (key === "warmDuringTools") {
@@ -347,6 +348,12 @@ export function parseConfigArgs(args: string, base: WarmCacheConfig = DEFAULT_CO
       const n = Number(value);
       if (!Number.isSafeInteger(n) || n < 1) throw new Error("toolmax must be a positive integer");
       next.toolWarmMaxProbes = n;
+      continue;
+    }
+    if (key === "openaittl") {
+      if (value === "12h" || value === "auto") {
+        next.openaiTtl = value;
+      } else throw new Error("openaittl must be auto or 12h");
       continue;
     }
     if (key === "ttl") {

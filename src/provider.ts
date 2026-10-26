@@ -45,6 +45,8 @@ export const ANTHROPIC_SHORT_TTL_MS = 5 * 60_000;
 export const ANTHROPIC_LONG_TTL_MS = 60 * 60_000;
 /** OpenAI explicit prompt_cache_options.ttl = 30m (minimum lifetime). */
 export const OPENAI_EXPLICIT_TTL_MS = 30 * 60_000;
+/** OpenAI prompt_cache_options.ttl = 12h (minimum lifetime, 2.5x write rate). */
+export const OPENAI_EXTENDED_TTL_MS = 12 * 60 * 60_000;
 /** Older OpenAI in-memory idle window. Conservative. */
 export const OPENAI_IMPLICIT_TTL_MS = 8 * 60_000;
 /** xAI Grok best-effort cadence. This is an operational heuristic, not a TTL. */
@@ -113,6 +115,9 @@ export function resolveMaxIdleWarmMs(
     case "anthropic-long":
     case "opencode-go-long-marker":
       referenceMs = ANTHROPIC_LONG_TTL_MS;
+      break;
+    case "openai-explicit-12h":
+      referenceMs = OPENAI_EXTENDED_TTL_MS;
       break;
     case "openai-explicit":
       referenceMs = OPENAI_EXPLICIT_TTL_MS;
@@ -327,7 +332,9 @@ function resolveVerifiedCacheFamily<Payload = undefined>(
   }
   if (isXaiBestEffortModel(model)) return "xai-best-effort";
   if (isOpenAIModel(model)) {
-    return modelSupportsExplicitPromptCacheMode(model) ? "openai-explicit" : "openai-implicit";
+    if (!modelSupportsExplicitPromptCacheMode(model)) return "openai-implicit";
+    const ttl = payloadObject(payloadObject(payload)?.prompt_cache_options)?.ttl;
+    return ttl === "12h" ? "openai-explicit-12h" : "openai-explicit";
   }
   return "unsupported";
 }
@@ -389,6 +396,8 @@ export function resolveCacheRetention(family: CacheFamily): CacheRetention {
     case "opencode-go-long-marker":
       return "long";
     case "anthropic-short":
+    case "openai-explicit-12h":
+      return "long";
     case "openai-explicit":
     case "openai-implicit":
     case "xai-best-effort":
@@ -519,6 +528,10 @@ export function resolveStrategy<Payload = undefined>(
     case "openai-explicit":
       ttlMs = OPENAI_EXPLICIT_TTL_MS;
       ttlLabel = "30m prompt-cache TTL";
+      break;
+    case "openai-explicit-12h":
+      ttlMs = OPENAI_EXTENDED_TTL_MS;
+      ttlLabel = "12h prompt-cache TTL";
       break;
     case "openai-implicit":
       ttlMs = OPENAI_IMPLICIT_TTL_MS;
@@ -834,6 +847,36 @@ export function applyWarmOutputLimit<Payload>(
   return payload;
 }
 
+/** Direct api.openai.com GPT-5.6+ Responses route (Pi's capability flag, not a model-name guess). */
+function isDirectOpenAIExplicitRoute(model: Model<any>): boolean {
+  if (model.provider !== "openai" || model.api !== "openai-responses" ||
+      !modelSupportsExplicitPromptCacheMode(model)) return false;
+  try {
+    const endpoint = new URL(model.baseUrl);
+    return endpoint.protocol === "https:" && endpoint.hostname === "api.openai.com";
+  } catch { return false; /* Invalid endpoints fall back to existing replay controls. */ }
+}
+
+/**
+ * Opt-in (openaiTtl=12h): request OpenAI's 12h minimum cache lifetime on a real
+ * direct OpenAI GPT-5.6+ Responses turn. ChatGPT sign-in rejects
+ * prompt_cache_options, and cacheRetention "none" (mode explicit) stays as is.
+ * Returns a new payload, or undefined when the payload must stay unchanged.
+ */
+export function applyOpenAIExtendedTtl<Payload>(
+  payload: Payload,
+  model: Model<any> | undefined,
+  usingOAuth: boolean,
+): PayloadObject | undefined {
+  const body = payloadObject(payload);
+  if (!body || !model || usingOAuth || body.model !== model.id || !isDirectOpenAIExplicitRoute(model)) {
+    return undefined;
+  }
+  const options = payloadObject(body.prompt_cache_options);
+  if (options?.mode === "explicit" || options?.ttl === "12h") return undefined;
+  return { ...body, prompt_cache_options: { ...options, ttl: "12h" } };
+}
+
 /**
  * Direct OpenAI GPT-5.6+ Responses can refresh the cache without generating
  * output. Gate on Pi's capability flag and the first-party endpoint, never on
@@ -847,13 +890,7 @@ export function applyWarmProbePayload<Payload>(
   model: Model<any>,
 ): Payload {
   const body = payloadObject(payload);
-  let directOpenAi = false;
-  try {
-    const endpoint = new URL(model.baseUrl);
-    directOpenAi = endpoint.protocol === "https:" && endpoint.hostname === "api.openai.com";
-  } catch { /* Invalid endpoints fall back to existing replay controls. */ }
-  if (body && model.provider === "openai" && model.api === "openai-responses" &&
-      directOpenAi && modelSupportsExplicitPromptCacheMode(model)) {
+  if (body && isDirectOpenAIExplicitRoute(model)) {
     body.prompt_cache_options = {
       ...payloadObject(body.prompt_cache_options),
       prewarm: true,

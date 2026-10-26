@@ -80,6 +80,7 @@ export type CacheFamily =
   | "anthropic-short"
   | "anthropic-long"
   | "openai-explicit"
+  | "openai-explicit-12h"
   | "openai-implicit"
   | "xai-best-effort"
   | "opencode-go-retained"
@@ -90,6 +91,8 @@ export type CacheFamily =
   | "unsupported";
 
 export type AnthropicTtlMode = "5m" | "1h" | "auto";
+
+export type OpenAITtlMode = "auto" | "12h";
 
 /** How Codex warm probes replay the captured request. */
 export type CodexWarmMode = "auto" | "exact" | "suffix";
@@ -113,6 +116,12 @@ export interface WarmCacheConfig {
    * - auto: follow Pi cacheRetention / model support
    */
   anthropicTtl: AnthropicTtlMode;
+  /**
+   * OpenAI prompt-cache TTL for direct api.openai.com GPT-5.6+ Responses turns.
+   * - auto: leave Pi's payload unchanged (default 30m)
+   * - 12h: rewrite real turns to prompt_cache_options.ttl "12h" (2.5x write instead of 1.25x)
+   */
+  openaiTtl: OpenAITtlMode;
   /** Keepalive interval in ms. Default null = strategy default; legacy files retain 4 minutes. */
   intervalMs: number | null;
   /** Max sessions that may run concurrent warm pings in this process. */
@@ -146,10 +155,11 @@ export interface WarmCacheConfig {
   logToFile: boolean;
   /**
    * Allow timer-based auto-warm on openai-codex-responses.
-   * Default true. Replay shape is controlled separately by codexWarmMode;
+   * Default false: Codex/Work subscription caches are retained server-side.
+   * Replay shape is controlled separately by codexWarmMode;
    * adaptive mode falls back to suffix after an oversized exact replay, while
    * repeated oversized responses still trigger the sticky block.
-   * Disable with /warm codex-off.
+   * Enable with /warm codex-on.
    */
   allowCodexAutoWarm: boolean;
   /**
@@ -174,6 +184,7 @@ export const DEFAULT_CONFIG: WarmCacheConfig = {
   warmAdvisor: false,
   enabled: true,
   anthropicTtl: "auto",
+  openaiTtl: "auto",
   intervalMs: null,
   maxConcurrentWarmSessions: 3,
   minCachedTokens: 512,
@@ -185,7 +196,7 @@ export const DEFAULT_CONFIG: WarmCacheConfig = {
     "Reply with exactly the single word: OK. Do not think. Do not explain. Do nothing else.",
   maxOutputTokens: 1,
   logToFile: false,
-  allowCodexAutoWarm: true,
+  allowCodexAutoWarm: false,
   codexWarmMode: "auto",
   warmDuringTools: [],
   warmAllTools: true,
