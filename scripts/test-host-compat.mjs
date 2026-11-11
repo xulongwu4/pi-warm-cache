@@ -188,7 +188,7 @@ try {
     assert(sol, `Pi ${version}: GPT-6.1 Sol catalog entry must exist`);
     assert.equal(sol.cost.cacheRead, sol.cost.input * 0.05);
     assert.equal(sol.cost.cacheWrite, sol.cost.input * 1.25);
-    assert.equal(resolveStrategy(sol, { ...DEFAULT_CONFIG, intervalMs: null }).intervalMs, 24 * 60_000);
+    assert.equal(resolveStrategy(sol, { ...DEFAULT_CONFIG, intervalMs: null }).intervalMs, 45 * 60_000);
     const { stream } = await import("@earendil-works/pi-ai/api/openai-responses");
     const captured = {
       model: sol.id, stream: true, input: [{ role: "user", content: "cache fixture" }],

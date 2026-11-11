@@ -592,11 +592,23 @@ export function resolveStrategy<Payload = undefined>(
       };
   }
 
+  // This is a best-effort cadence, not a TTL guarantee. OAuth probes for
+  // GPT-6 Luna and GPT-6.1 Terra hit after 60m, but Luna also missed at 10m.
+  const gptVersion = /^gpt-(\d+)(?:\.(\d+))?(?:-|$)/i.exec(model?.id ?? "");
+  const modernOpenAI =
+    (model?.provider === "openai" || model?.provider === "openai-codex") &&
+    gptVersion !== null &&
+    (Number(gptVersion[1]) > 5 ||
+      (Number(gptVersion[1]) === 5 && Number(gptVersion[2] ?? 0) >= 6));
+  if (modernOpenAI) ttlLabel = "GPT-5.6+ best-effort cadence; TTL unverified";
+
   const intervalMs =
     config.intervalMs ??
-    (family === "xai-best-effort"
-      ? XAI_BEST_EFFORT_INTERVAL_MS
-      : Math.max(30_000, Math.floor(ttlMs * DEFAULT_TTL_FRACTION)));
+    (modernOpenAI
+      ? 45 * 60_000
+      : family === "xai-best-effort"
+        ? XAI_BEST_EFFORT_INTERVAL_MS
+        : Math.max(30_000, Math.floor(ttlMs * DEFAULT_TTL_FRACTION)));
 
   return {
     capability,

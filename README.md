@@ -121,9 +121,9 @@ Automatic keepalive is on for these registered routes:
 |---|---|
 | Anthropic | Probe about every 4 minutes, or about every 48 minutes when the request already uses a 1-hour cache |
 | Claude Code / `claude-bridge` (experimental adapter) | Session-scoped SDK prefix warming, including long Pi tools; requires the cooperating bridge patch, not the stock npm bridge |
-| OpenAI | No-output prewarm on supported GPT-5.6+ Responses models; capped replay on older models |
-| Azure OpenAI | Same OpenAI response strategy |
-| OpenAI Codex | Adaptive replay by default; switches from the bounded suffix to exact replay when a suffix hit is followed by a comparable real-turn miss |
+| OpenAI | Best-effort 45m cadence for GPT-5.6+; no-output prewarm on supported Responses models, capped replay otherwise |
+| Azure OpenAI | Existing provider cadence and replay strategy; no GPT-5.6+ interval override |
+| OpenAI Codex | Best-effort 45m cadence for GPT-5.6+; adaptive replay switches from the bounded suffix to exact replay when a suffix hit is followed by a comparable real-turn miss |
 | GitHub Copilot | Automatic warming for keyed Responses, Completions, and Anthropic models whose captured request contains cache markers |
 | xAI Grok 4.5 | Best-effort probe about every 4 minutes when the request has a stable cache key |
 | OpenCode Go (default setup) | Keepalive on short Anthropic and keyed Responses routes; no timer on Completions because that cache already lasts a long time |
@@ -137,13 +137,20 @@ tools, and input are preserved; real requests are never changed. Pi's explicit
 cache capability flag selects this behavior, not a model-name allowlist.
 The same documented prewarm mechanism applies to supported GPT-5.6+ models.
 
-The cache lifetime is at least 30 minutes after the latest write or reuse, with
-a refresh at about 24 minutes when using `/warm auto` (an explicit interval
-still overrides the provider cadence). Sol cache reads cost 5% of uncached
-input and writes cost 125%; savings estimates use the active Pi catalog's base
+This fork uses a best-effort **45-minute** automatic cadence for GPT-5.6+
+model IDs on `openai` and `openai-codex`, including GPT-6 and GPT-6.1.
+An explicit interval still overrides it. OAuth tests hit after 60 minutes on
+GPT-6 Luna and GPT-6.1 Terra, but Luna also missed after 10 minutes. This is
+not a guaranteed TTL; the policy for other GPT-5.6+ models is untested.
+Older models, other providers, native Pi warming, and request TTL fields are
+unchanged. Sol cache reads cost 5% of uncached input and writes cost 125%;
+savings estimates use the active Pi catalog's base
 prices rather than hardcoded model rates. Cacheable prefixes must have
 at least 1,024 tokens. A cold prewarm still incurs a cache-write charge.
 
+The existing `maxidle` cutoff still applies. Set it longer than 45 minutes
+(for example `/warm maxidle=4h`) to allow these probes. In particular, the
+Codex implicit family's automatic cutoff remains 30 minutes.
 This no-output mechanism is restricted to `openai` / `openai-responses` at
 `https://api.openai.com`. Azure, proxy routes, and the legacy OpenAI Codex
 subscription endpoint retain their existing replay policies; the OpenAI API's
@@ -183,8 +190,8 @@ only to the separate OpenAI Codex provider; it does not control Copilot timers.
 
 New installations default to **`interval=auto`**: the captured provider route
 selects the cadence (for example 4 minutes for short Anthropic caches, 48
-minutes for a captured one-hour cache, or 24 minutes for supported direct
-OpenAI prewarm). Explicit intervals override the cadence, but never override
+minutes for a captured one-hour cache, or 45 minutes for GPT-5.6+ on
+OpenAI and OpenAI Codex). Explicit intervals override the cadence, but never override
 retention or safety gates. This setting does not change the cache TTL itself.
 Legacy JSON retains its saved interval, or its previous 4-minute default when
 omitted. Use `/warm auto` to deliberately switch it to automatic cadence.
