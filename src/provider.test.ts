@@ -357,7 +357,7 @@ function deepEqualExcept<Actual, Expected>(
     "short retention with omitted cache options also supports prewarming");
   assert(defaultOptions && !("max_output_tokens" in defaultOptions), "prewarm needs no generated-output cap");
   const strategy = resolveStrategy(sol, { ...DEFAULT_CONFIG, intervalMs: null }, original);
-  assert(strategy.family === "openai-explicit" && strategy.intervalMs === 45 * 60_000,
+  assert(strategy.family === "openai-explicit" && strategy.intervalMs === 48 * 60_000,
     "Sol must use the modern OpenAI best-effort cadence");
 
   // Model names alone and compatible transports must never enable the field.
@@ -673,7 +673,7 @@ function deepEqualExcept<Actual, Expected>(
       for (const id of ["gpt-5.6", "gpt-5.6-mini", "gpt-5.6-codex", "gpt-5.10", "gpt-6", "gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"]) {
         const model = modelFixture({ ...route, id });
         const plan = resolveStrategy(model, DEFAULT_CONFIG);
-        assert(plan.intervalMs === 45 * 60_000, `${provider}/${id} must default to 45m`);
+        assert(plan.intervalMs === 48 * 60_000, `${provider}/${id} must default to 48m`);
         assert(plan.automaticWarm, `${provider}/${id} must retain automatic warming`);
         assert(plan.ttlLabel.includes("TTL unverified"), "cadence must not imply a guaranteed TTL");
         assert(resolveStrategy(model, { ...DEFAULT_CONFIG, intervalMs: 90_000 }).intervalMs === 90_000,
@@ -791,7 +791,7 @@ function deepEqualExcept<Actual, Expected>(
   assert(oai.family === "openai-explicit", "compat flag selects explicit 30m family");
   const openAiInterval = oai.intervalMs;
   assert(openAiInterval !== null, "OpenAI strategy must have an interval");
-  assert(openAiInterval === 45 * 60_000, "GPT-5.6 uses the 45m best-effort cadence");
+  assert(openAiInterval === 48 * 60_000, "GPT-5.6 uses the 48m best-effort cadence");
 
   const openaiOld = modelFixture({
     id: "o3",

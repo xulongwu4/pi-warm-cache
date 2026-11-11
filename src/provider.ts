@@ -605,7 +605,7 @@ export function resolveStrategy<Payload = undefined>(
   const intervalMs =
     config.intervalMs ??
     (modernOpenAI
-      ? 45 * 60_000
+      ? 48 * 60_000
       : family === "xai-best-effort"
         ? XAI_BEST_EFFORT_INTERVAL_MS
         : Math.max(30_000, Math.floor(ttlMs * DEFAULT_TTL_FRACTION)));
